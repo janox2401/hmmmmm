@@ -395,11 +395,21 @@ function renderFiles() {
   el.querySelectorAll("[data-rm]").forEach((b) => b.addEventListener("click", () => { pending.splice(Number(b.dataset.rm), 1); renderFiles(); }));
 }
 
-async function pdfText(file) {
-  if (!window.pdfjsLib) throw new Error("PDF-Leser konnte nicht geladen werden.");
-  const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise;
+async function readBytes(file) {
+  try { return new Uint8Array(await file.arrayBuffer()); }
+  catch { throw new Error(`„${file.name}“ konnte nicht gelesen werden. Wahrscheinlich hat OneDrive die Datei inzwischen synchronisiert oder sie liegt nur in der Cloud. Öffne den Ordner bzw. die Datei einfach nochmal.`); }
+}
+
+async function pdfText(file, onPage) {
+  if (!window.pdfjsLib) throw new Error("PDF-Leser konnte nicht geladen werden. Lade die Seite neu.");
+  const data = await readBytes(file);
+  let pdf;
+  try { pdf = await pdfjsLib.getDocument({ data }).promise; }
+  catch (e) { throw new Error(e?.name === "PasswordException" ? `„${file.name}“ ist passwortgeschützt. Speichere es ohne Passwort und versuch es nochmal.` : `„${file.name}“ ist kein lesbares PDF (beschädigt?).`); }
   const pages = [];
   for (let p = 1; p <= pdf.numPages; p++) {
+    if (onPage && (p === 1 || p % 5 === 0)) onPage(p, pdf.numPages);
+    await new Promise((r) => setTimeout(r, 0)); // let the page repaint and stay responsive
     const content = await (await pdf.getPage(p)).getTextContent();
     const text = content.items.map((it) => it.str + (it.hasEOL ? "\n" : " ")).join("").replace(/[ \t]+/g, " ").trim();
     if (text) pages.push(`[Seite ${p}]\n${text}`);
@@ -439,9 +449,9 @@ function bindForm(deck) {
       // Read material: PDFs and text files become text, images go along as images.
       const parts = [], images = [];
       for (const f of pending) {
-        if (f.type === "application/pdf" || /\.pdf$/i.test(f.name)) { say(`Lese ${f.name} …`); const t = await pdfText(f); if (t) parts.push(`Datei ${f.name}:\n${t}`); else throw new Error(`In „${f.name}“ wurde kein Text gefunden (eingescannt?). Lade die Seiten als Fotos hoch oder füge den Text ein.`); }
+        if (f.type === "application/pdf" || /\.pdf$/i.test(f.name)) { say(`Lese ${f.name} …`); const t = await pdfText(f, (p, n) => say(`Lese ${f.name} … Seite ${p} von ${n}`)); if (t) parts.push(`Datei ${f.name}:\n${t}`); else throw new Error(`In „${f.name}“ wurde kein Text gefunden (eingescannt?). Lade die Seiten als Fotos hoch oder füge den Text ein.`); }
         else if (f.type.startsWith("image/")) images.push(f);
-        else parts.push(`Datei ${f.name}:\n${await f.text()}`);
+        else parts.push(`Datei ${f.name}:\n${new TextDecoder().decode(await readBytes(f))}`);
       }
       if ($("#text").value.trim()) parts.push(`Notizen:\n${$("#text").value.trim()}`);
       if (images.length && !imageLimits) throw new Error(SAMPLE_ERRORS.images_unavailable);
@@ -471,9 +481,10 @@ function bindForm(deck) {
       const out = await sample.json(prompt, { modelTier: "default", ...(images.length ? { images } : {}) });
 
       const cards = (Array.isArray(out?.flashcards) ? out.flashcards : [])
-        .filter((c) => c && typeof c.front === "string" && typeof c.back === "string" && c.front.trim())
-        .map((c) => newCard(c.front.trim(), c.back.trim()));
+        .filter((c) => c && c.front != null && c.back != null && String(c.front).trim() && String(c.back).trim())
+        .map((c) => newCard(String(c.front).trim(), String(c.back).trim()));
       const questions = (Array.isArray(out?.quiz) ? out.quiz : [])
+        .map((q) => ({ ...q, correct_index: Number(q?.correct_index) }))
         .filter((q) => q && typeof q.question === "string" && Array.isArray(q.options) && q.options.length >= 2 && Number.isInteger(q.correct_index) && q.correct_index >= 0 && q.correct_index < q.options.length)
         .map((q) => ({ id: uid(), question: q.question, options: q.options.map(String), correctIndex: q.correct_index, explanation: String(q.explanation || "") }));
       if (!cards.length && !questions.length) throw { code: "invalid_json" };
@@ -540,9 +551,11 @@ function renderFolder() {
     const gi = Number(b.dataset.make), g = folder.groups[gi];
     const files = [...app.querySelectorAll(`input[data-g="${gi}"]:checked`)].map((c) => g.files[Number(c.dataset.f)]);
     if (!files.length) { showToast("Wähle mindestens eine Datei aus."); return; }
-    const segs = g.path.split(" › ");
-    const topic = files.length === 1 ? files[0].name.replace(/\.[^.]+$/, "") : segs[segs.length - 1];
-    go("new", { prefill: { topic, subject: segs[segs.length - 1] === topic ? (segs[segs.length - 2] || "") : segs[segs.length - 1], files } });
+    const GENERIC = /^(skript|skripte|folien|slides|unterlagen|material(ien)?|vorlesungen?|übungen|uebungen|pdfs?|dokumente|lektionen|downloads?|\d+\.?\s*semester)$/i;
+    const named = g.path.split(" › ").filter((x) => !GENERIC.test(x.trim()));
+    const course = named[named.length - 1] || g.path.split(" › ").pop();
+    const topic = files.length === 1 ? files[0].name.replace(/\.[^.]+$/, "") : course;
+    go("new", { prefill: { topic, subject: course === topic ? (named[named.length - 2] || "") : course, files } });
   }));
 }
 function renderMore() {
