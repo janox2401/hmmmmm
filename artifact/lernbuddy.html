@@ -1,0 +1,737 @@
+<title>Lernbuddy</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=JetBrains+Mono:wght@500&display=swap">
+<style>
+/* Layout: one narrow study column; the flashcard is a real German Karteikarte (red header rule, blue ruled lines), the progress view a five-compartment Karteikasten. */
+:root {
+  --paper: #eef1f5;
+  --card: #ffffff;
+  --ink: #1b2a41;
+  --pencil: #5f6b7c;
+  --line: #d5dde8;
+  --rule: #c3d4ec;
+  --red: #c8352b;
+  --red-soft: #fbe9e7;
+  --blue: #2457a6;
+  --blue-soft: #e6eefa;
+  --good: #1f7a46;
+  --good-soft: #e3f3e9;
+  --font-display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --font-body: "Atkinson Hyperlegible", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "Cascadia Mono", monospace;
+  --radius: 12px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #11151c; --card: #1a2029; --ink: #e5eaf1; --pencil: #9aa6b6; --line: #2c3542;
+    --rule: #263a57; --red: #ff6f62; --red-soft: #3a1d1b; --blue: #8db4ff; --blue-soft: #1c2a44;
+    --good: #5fd08d; --good-soft: #15301f; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #11151c; --card: #1a2029; --ink: #e5eaf1; --pencil: #9aa6b6; --line: #2c3542;
+  --rule: #263a57; --red: #ff6f62; --red-soft: #3a1d1b; --blue: #8db4ff; --blue-soft: #1c2a44;
+  --good: #5fd08d; --good-soft: #15301f; color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body {
+  background: var(--paper); color: var(--ink);
+  font: 17px/1.55 var(--font-body);
+  padding-inline: 16px; padding-block: 0 64px;
+}
+.wrap { max-width: 680px; margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; }
+h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; margin: 0; line-height: 1.15; }
+h2 { font-size: 1.05rem; font-weight: 600; letter-spacing: 0.01em; }
+p { margin: 0; }
+a { color: var(--blue); }
+.muted { color: var(--pencil); }
+.small { font-size: 0.875rem; }
+.num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--pencil); font-weight: 700; }
+
+/* Header */
+.top {
+  position: sticky; top: env(safe-area-inset-top, 0px); z-index: 2;
+  background: var(--paper); display: flex; align-items: center; gap: 12px;
+  padding-block: 14px; border-bottom: 1px solid var(--line);
+}
+.wordmark { font-family: var(--font-display); font-weight: 800; font-size: 1.35rem; letter-spacing: -0.01em; }
+.wordmark span { color: var(--red); }
+.top h1 { flex: 1; min-width: 0; font-size: 1.15rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nav-back {
+  width: 40px; height: 40px; flex: none; border-radius: 50%; border: 1px solid var(--line);
+  background: var(--card); color: var(--ink); font-size: 1.2rem; cursor: pointer;
+}
+
+/* Buttons */
+button { font: inherit; color: inherit; }
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 12px 18px; border-radius: var(--radius); border: 1px solid var(--line);
+  background: var(--card); color: var(--ink); font-weight: 700; cursor: pointer; text-align: center;
+}
+.btn:hover { border-color: var(--pencil); }
+.btn:focus-visible, .option:focus-visible, .nav-back:focus-visible, .deck:focus-visible, .flashcard:focus-visible { outline: 3px solid var(--blue); outline-offset: 2px; }
+.btn:disabled { opacity: 0.55; cursor: progress; }
+.btn.primary { background: var(--ink); border-color: var(--ink); color: var(--paper); }
+.btn.red { background: var(--red); border-color: var(--red); color: #fff; }
+.btn.ghost { background: transparent; }
+.btn.danger { background: transparent; color: var(--red); border-color: var(--red-soft); }
+.btn.block { width: 100%; }
+.btn small { font-weight: 400; opacity: 0.75; }
+.row { display: flex; flex-wrap: wrap; gap: 10px; }
+.row > * { flex: 1 1 140px; }
+
+/* Messages */
+.note { padding: 12px 14px; border-radius: var(--radius); background: var(--card); border: 1px solid var(--line); }
+.note.error { background: var(--red-soft); border-color: transparent; color: var(--red); }
+.thinking { display: flex; gap: 10px; align-items: center; color: var(--pencil); }
+.spinner { width: 16px; height: 16px; flex: none; border-radius: 50%; border: 2px solid var(--line); border-top-color: var(--red); animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 3s; } .flashcard { transition: none !important; } }
+
+/* Home */
+.hero { display: grid; gap: 10px; padding-block: 8px 4px; }
+.hero h1 { font-size: clamp(1.7rem, 6vw, 2.3rem); font-weight: 800; }
+.decks { display: grid; gap: 12px; }
+.deck {
+  display: grid; gap: 6px; text-align: left; cursor: pointer;
+  background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 16px; border-top: 4px solid var(--red);
+}
+.deck-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.deck-head strong { font-family: var(--font-display); font-size: 1.1rem; min-width: 0; }
+.chip { font-size: 0.78rem; font-weight: 700; padding: 2px 9px; border-radius: 99px; white-space: nowrap; }
+.chip.due { background: var(--red-soft); color: var(--red); }
+.chip.done { background: var(--good-soft); color: var(--good); }
+.meter { height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; }
+.meter span { display: block; height: 100%; background: var(--good); }
+.empty { display: grid; gap: 14px; justify-items: start; padding: 22px; border: 2px dashed var(--line); border-radius: var(--radius); }
+
+/* Forms */
+form { display: grid; gap: 16px; }
+label { display: grid; gap: 6px; font-weight: 700; }
+label .muted { font-weight: 400; }
+input[type=text], input[type=number], textarea, select {
+  width: 100%; font: inherit; color: var(--ink); background: var(--card);
+  border: 1px solid var(--line); border-radius: 10px; padding: 11px 12px;
+}
+textarea { resize: vertical; min-height: 120px; }
+.drop {
+  display: grid; gap: 4px; justify-items: center; text-align: center; padding: 22px 14px; cursor: pointer;
+  border: 2px dashed var(--rule); border-radius: var(--radius); background: var(--card); font-weight: 400;
+}
+.drop.over { border-color: var(--blue); background: var(--blue-soft); }
+.files { display: grid; gap: 6px; }
+.file { display: flex; justify-content: space-between; gap: 10px; align-items: center; padding: 8px 12px; background: var(--card); border: 1px solid var(--line); border-radius: 10px; font-size: 0.9rem; }
+.file span { min-width: 0; overflow-wrap: anywhere; }
+.file button { border: 0; background: none; color: var(--pencil); cursor: pointer; font-size: 1.1rem; }
+.seg { display: flex; flex-wrap: wrap; gap: 6px; }
+.seg label { flex: 1 1 120px; display: block; font-weight: 400; }
+.seg input { position: absolute; opacity: 0; }
+.seg span { display: block; text-align: center; padding: 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); cursor: pointer; }
+.seg input:checked + span { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); font-weight: 700; }
+.seg input:focus-visible + span { outline: 3px solid var(--blue); outline-offset: 2px; }
+
+/* Deck view */
+.actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.actions .btn { flex-direction: column; gap: 2px; padding: 16px 10px; }
+.actions .wide { grid-column: 1 / -1; }
+.kasten { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; align-items: end; }
+.fach { display: grid; gap: 6px; justify-items: center; }
+.fach .slot { width: 100%; height: 84px; display: flex; align-items: flex-end; background: var(--card); border: 1px solid var(--line); border-radius: 6px 6px 3px 3px; overflow: hidden; }
+.fach .fill { width: 100%; background: repeating-linear-gradient(0deg, var(--rule) 0 3px, var(--card) 3px 6px); border-top: 3px solid var(--red); }
+.fach .count { font-weight: 700; }
+.fach small { color: var(--pencil); font-size: 0.72rem; text-align: center; line-height: 1.25; }
+.summary { white-space: pre-wrap; }
+details { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; }
+summary { cursor: pointer; font-weight: 700; }
+.cardlist { margin: 10px 0 0; padding-left: 18px; display: grid; gap: 10px; }
+
+/* Flashcard */
+.flashcard {
+  position: relative; min-height: 280px; cursor: pointer; text-align: center;
+  display: grid; align-content: center; gap: 16px; padding: 46px 22px 26px;
+  border-radius: 6px; border: 1px solid var(--line);
+  background:
+    linear-gradient(var(--card), var(--card)) top / 100% 34px no-repeat,
+    repeating-linear-gradient(180deg, transparent 0 31px, var(--rule) 31px 32px) 0 34px / 100% 100% var(--card);
+  box-shadow: 0 10px 30px rgb(15 30 60 / 0.08);
+}
+.flashcard::before { content: ""; position: absolute; left: 0; right: 0; top: 34px; height: 2px; background: var(--red); }
+.flashcard .tag { position: absolute; top: 8px; left: 14px; font-size: 0.72rem; color: var(--pencil); }
+.flashcard .front { font-family: var(--font-display); font-weight: 600; font-size: 1.3rem; }
+.flashcard .back { padding-top: 14px; border-top: 1px dashed var(--pencil); white-space: pre-wrap; }
+.answer { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.btn.no { background: var(--red-soft); color: var(--red); border-color: transparent; }
+.btn.yes { background: var(--good-soft); color: var(--good); border-color: transparent; }
+.tutor { background: var(--card); border: 1px solid var(--line); border-left: 4px solid var(--blue); border-radius: var(--radius); padding: 14px 16px; white-space: pre-wrap; }
+
+/* Quiz */
+.question { font-family: var(--font-display); font-size: 1.25rem; font-weight: 600; }
+.options { display: grid; gap: 10px; }
+.option {
+  text-align: left; padding: 14px 16px; border-radius: var(--radius); cursor: pointer;
+  background: var(--card); border: 2px solid var(--line); color: var(--ink); display: flex; gap: 12px;
+}
+.option b { font-family: var(--font-mono); color: var(--pencil); }
+.option.right { border-color: var(--good); background: var(--good-soft); }
+.option.wrong { border-color: var(--red); background: var(--red-soft); }
+.option:disabled { cursor: default; }
+.feedback { padding: 14px 16px; border-radius: var(--radius); display: grid; gap: 6px; }
+.feedback.right { background: var(--good-soft); }
+.feedback.wrong { background: var(--red-soft); }
+.done { display: grid; gap: 14px; justify-items: center; text-align: center; padding-block: 28px; }
+.score { font-family: var(--font-display); font-size: 3rem; font-weight: 800; }
+
+/* Chat */
+.chat { display: grid; gap: 10px; }
+.msg { padding: 12px 14px; border-radius: var(--radius); white-space: pre-wrap; max-width: 92%; min-width: 0; overflow-wrap: anywhere; }
+.msg.bot { background: var(--card); border: 1px solid var(--line); justify-self: start; }
+.msg.me { background: var(--ink); color: var(--paper); justify-self: end; }
+.chat-form { display: flex; gap: 8px; align-items: flex-end; }
+.chat-form textarea { min-height: 52px; flex: 1; }
+.confirm { display: grid; gap: 10px; padding: 14px; border-radius: var(--radius); background: var(--red-soft); }
+</style>
+
+<div class="wrap" id="app"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"></script>
+<script>
+"use strict";
+// ---------- Helpers ----------
+const app = document.getElementById("app");
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+const $ = (sel) => app.querySelector(sel);
+const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
+const shuffle = (arr) => { const a = [...arr]; for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+
+const DAY = 86400000;
+const INTERVALS = [0, 1, 2, 4, 8, 16]; // days per Leitner compartment
+const MAX_BOX = 5;
+const FACH_LABEL = ["täglich", "alle 2 Tage", "alle 4 Tage", "alle 8 Tage", "gelernt"];
+
+const newCard = (front, back) => ({ id: uid(), front, back, box: 1, due: Date.now() });
+const reviewCard = (c, knew) => { const box = knew ? Math.min(c.box + 1, MAX_BOX) : 1; return { ...c, box, due: Date.now() + INTERVALS[box] * DAY }; };
+const dueCards = (d) => d.cards.filter((c) => c.due <= Date.now());
+
+// ---------- Claude (viewer's own plan) ----------
+let sample = null;
+let imageLimits = null;
+
+const SAMPLE_ERRORS = {
+  not_granted: "Du hast der Seite nicht erlaubt, Claude zu nutzen. Lade die Seite neu und erlaube den Zugriff, um Inhalte zu erzeugen.",
+  sampling_disabled: "Claude ist für dein Konto hier nicht verfügbar.",
+  rate_limited: "Gerade zu viele Anfragen. Warte einen Moment und versuch es dann nochmal.",
+  usage_limit: "Dein Claude-Nutzungslimit ist erreicht. Später geht es weiter.",
+  prompt_too_large: "Die Unterlagen sind zu lang für eine Anfrage. Lade weniger Seiten auf einmal hoch.",
+  invalid_json: "Claude hat kein lesbares Lernset geliefert. Versuch es nochmal, eventuell mit weniger Karten.",
+  images_unavailable: "Bilder kann diese Ansicht nicht an Claude senden. Nutze PDF oder Text.",
+  image_rejected: "Ein Bild konnte nicht gelesen werden. Nimm JPG oder PNG.",
+  refused: "Claude hat diese Anfrage abgelehnt. Formuliere sie etwas anders.",
+};
+const sampleError = (e) => SAMPLE_ERRORS[e?.code] || (e?.code === "cancelled" ? "Abgebrochen." : "Claude ist gerade nicht erreichbar. Versuch es gleich nochmal.");
+
+const TUTOR_RULES = (deck) => [
+  "Du bist ein geduldiger, fachlich präziser Uni-Tutor und antwortest immer auf Deutsch.",
+  settings.study ? `Die Person studiert: ${settings.study}.` : "",
+  `Wir lernen „${deck.name}“${deck.subject ? ` im Fach ${deck.subject}` : ""}.`,
+  deck.summary ? `Zusammenfassung des Stoffs:\n${deck.summary}` : "",
+  deck.cards.length ? `Karteikarten des Lernsets:\n${deck.cards.slice(0, 80).map((c) => `- ${c.front}: ${c.back}`).join("\n")}` : "",
+  "Antworte kompakt in einfachem Fließtext oder Aufzählungen mit „-“, ohne Markdown-Überschriften. Wenn du dir unsicher bist, sag es.",
+].filter(Boolean).join("\n\n");
+
+// ---------- Storage: private per viewer in the artifact's db, browser fallback ----------
+let decks = [];
+let settings = { study: "" };
+let store = null; // { col, settingsDoc } when db is available
+const LOCAL_KEY = "lernbuddy.v1";
+const writeChains = new Map();
+
+function localLoad() { try { const raw = localStorage.getItem(LOCAL_KEY); if (raw) { const v = JSON.parse(raw); decks = v.decks || []; settings = { ...settings, ...(v.settings || {}) }; } } catch {} }
+function localSave() { try { localStorage.setItem(LOCAL_KEY, JSON.stringify({ decks, settings })); } catch {} }
+
+function sortDecks() { decks.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)); }
+
+function saveDeck(deck) {
+  deck.updatedAt = Date.now();
+  const i = decks.findIndex((d) => d.id === deck.id);
+  if (i >= 0) decks[i] = deck; else decks.unshift(deck);
+  sortDecks();
+  if (!store) return localSave();
+  // One write at a time per deck document.
+  const prev = writeChains.get(deck.id) || Promise.resolve();
+  const next = prev.then(() => store.col.doc(deck.id).set(JSON.parse(JSON.stringify(deck)))).catch((e) => showToast(e?.code === "quota_exceeded" ? "Speicher voll: Lösche ein altes Lernset." : "Speichern fehlgeschlagen. Prüfe deine Verbindung."));
+  writeChains.set(deck.id, next);
+}
+function removeDeck(id) {
+  decks = decks.filter((d) => d.id !== id);
+  if (!store) return localSave();
+  store.col.doc(id).delete().catch(() => showToast("Löschen fehlgeschlagen."));
+}
+function saveSettings() {
+  if (!store) return localSave();
+  store.settingsDoc.set({ ...settings }).catch(() => {});
+}
+const getDeck = (id) => decks.find((d) => d.id === id);
+
+let toastTimer;
+function showToast(text) {
+  let el = document.getElementById("toast");
+  if (!el) { el = document.createElement("div"); el.id = "toast"; el.className = "note error"; el.style.cssText = "position:fixed;left:16px;right:16px;bottom:calc(16px + env(safe-area-inset-bottom,0px));max-width:648px;margin:0 auto;z-index:5"; document.body.appendChild(el); }
+  el.textContent = text; el.hidden = false;
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => (el.hidden = true), 5000);
+}
+
+// ---------- Routing (in memory) ----------
+let view = { name: "home" };
+let ready = false;
+function go(name, params = {}) { view = { name, ...params }; render(); window.scrollTo(0, 0); }
+
+function header(title, back) {
+  return back
+    ? `<header class="top"><button class="nav-back" data-go="${back}" aria-label="Zurück">←</button><h1>${esc(title)}</h1></header>`
+    : `<header class="top"><div class="wordmark">Lern<span>buddy</span></div></header>`;
+}
+
+function render() {
+  const fn = { home: renderHome, new: renderNew, deck: renderDeck, learn: renderLearn, quiz: renderQuiz, tutor: renderTutor, more: renderMore, settings: renderSettings }[view.name];
+  if (view.id && !getDeck(view.id)) { view = { name: "home" }; }
+  (fn || renderHome)();
+  bindBack();
+}
+
+// ---------- Home ----------
+function renderHome() {
+  const list = decks.map((d) => {
+    const due = dueCards(d).length;
+    const learned = d.cards.filter((c) => c.box >= MAX_BOX).length;
+    const pct = d.cards.length ? Math.round((learned / d.cards.length) * 100) : 0;
+    return `<button class="deck" data-go="deck:${d.id}">
+      <div class="deck-head"><strong>${esc(d.name)}</strong>${due ? `<span class="chip due">${due} fällig</span>` : `<span class="chip done">alles wiederholt</span>`}</div>
+      <span class="muted small">${esc(d.subject || "Ohne Fach")} · ${plural(d.cards.length, "Karte", "Karten")} · ${plural(d.questions.length, "Frage", "Fragen")}</span>
+      <div class="meter" aria-label="${pct} Prozent gelernt"><span style="width:${pct}%"></span></div>
+    </button>`;
+  }).join("");
+
+  app.innerHTML = `${header()}
+    <section class="hero">
+      <h1>Aus deinen Unterlagen werden Karteikarten.</h1>
+      <p class="muted">Lade Skript, Folien oder Notizen hoch. Claude erstellt Karteikarten, ein Quiz und eine Zusammenfassung, und du lernst mit dem Karteikasten-Prinzip.</p>
+    </section>
+    <div class="row"><button class="btn red" data-go="new">＋ Neues Lernset</button><button class="btn ghost" data-go="settings">Einstellungen</button></div>
+    ${!ready ? `<div class="thinking"><span class="spinner"></span>Deine Lernsets werden geladen …</div>` :
+      decks.length ? `<h2>Deine Lernsets</h2><div class="decks">${list}</div>` :
+      `<div class="empty"><h2>Noch keine Lernsets</h2><p class="muted">Dein erstes Lernset erscheint hier. Starte mit einem Vorlesungs-PDF oder schau dir zuerst ein Beispiel an.</p><button class="btn" id="example">Beispiel-Lernset ansehen</button></div>`}
+    ${sample === null && ready ? `<p class="note small">Claude ist in dieser Ansicht nicht erreichbar. Öffne die Seite auf claude.ai, um neue Inhalte zu erzeugen. Lernen geht trotzdem.</p>` : ""}`;
+  $("#example")?.addEventListener("click", () => { const d = exampleDeck(); saveDeck(d); go("deck", { id: d.id }); });
+}
+
+function exampleDeck() {
+  return {
+    id: uid(), name: "Beispiel: Angebot und Nachfrage", subject: "VWL Grundlagen", createdAt: Date.now(),
+    summary: "Der Marktpreis entsteht dort, wo die angebotene und die nachgefragte Menge gleich sind. Verschiebungen der Kurven entstehen durch Faktoren außer dem Preis, etwa Einkommen oder Produktionskosten. Die Preiselastizität misst, wie stark die Menge auf Preisänderungen reagiert.",
+    cards: [
+      ["Was ist das Marktgleichgewicht?", "Der Punkt, an dem angebotene und nachgefragte Menge gleich sind. Dort liegen Gleichgewichtspreis und -menge."],
+      ["Bewegung entlang vs. Verschiebung der Nachfragekurve?", "Eine Preisänderung bewegt entlang der Kurve. Andere Faktoren (Einkommen, Präferenzen, Preise anderer Güter) verschieben die Kurve."],
+      ["Was misst die Preiselastizität der Nachfrage?", "Prozentuale Mengenänderung geteilt durch prozentuale Preisänderung."],
+      ["Wann ist die Nachfrage unelastisch?", "Wenn |Elastizität| < 1, die Menge also unterproportional auf den Preis reagiert, z. B. bei Grundnahrungsmitteln."],
+      ["Was ist ein Höchstpreis und seine Folge?", "Ein staatlich festgelegter Preis unter dem Gleichgewicht. Folge: Nachfrageüberhang (Knappheit)."],
+      ["Was sind Substitutionsgüter?", "Güter, die sich gegenseitig ersetzen. Steigt der Preis des einen, steigt die Nachfrage nach dem anderen (z. B. Butter und Margarine)."],
+    ].map(([f, b]) => newCard(f, b)),
+    questions: [
+      { id: uid(), question: "Die Produktionskosten für Weizen steigen. Was passiert auf dem Brotmarkt?", options: ["Die Angebotskurve verschiebt sich nach links, der Preis steigt", "Die Nachfragekurve verschiebt sich nach rechts", "Bewegung entlang der Angebotskurve nach oben", "Nichts, Kosten betreffen nur den Weizenmarkt"], correctIndex: 0, explanation: "Höhere Inputkosten senken das Angebot zu jedem Preis: Die Angebotskurve verschiebt sich nach links, Gleichgewichtspreis steigt, Menge sinkt. Die Nachfrage ändert sich dadurch nicht." },
+      { id: uid(), question: "Ein Preis steigt um 10 %, die Menge sinkt um 5 %. Wie ist die Nachfrage?", options: ["Elastisch", "Unelastisch", "Vollkommen elastisch", "Einheitselastisch"], correctIndex: 1, explanation: "Elastizität = -5 % / 10 % = -0,5. Der Betrag ist kleiner als 1, also unelastisch." },
+      { id: uid(), question: "Ein Mindestlohn über dem Gleichgewichtslohn führt im Modell zu …", options: ["Arbeitskräftemangel", "Angebotsüberhang an Arbeit", "Keiner Veränderung", "Sinkendem Lohn"], correctIndex: 1, explanation: "Ein Mindestpreis über dem Gleichgewicht erhöht die angebotene Menge (Arbeit) und senkt die nachgefragte: Es entsteht ein Angebotsüberhang, also Arbeitslosigkeit im einfachen Modell." },
+    ],
+  };
+}
+
+// ---------- Create / extend ----------
+let pending = []; // files chosen for the current form
+
+function formHtml(deck) {
+  const imgHint = imageLimits ? ", Fotos" : "";
+  return `<form id="gen">
+    ${deck ? "" : `
+      <label for="topic">Thema <input type="text" id="topic" required placeholder="z. B. Lineare Regression, Vorlesung 4"></label>
+      <label for="subject">Fach <span class="muted">(optional)</span><input type="text" id="subject" placeholder="z. B. Statistik II"></label>`}
+    <div style="display:grid;gap:8px">
+      <span style="font-weight:700">Unterlagen <span class="muted" style="font-weight:400">(PDF${imgHint}, .txt, optional)</span></span>
+      <label class="drop" id="drop" for="file">
+        <span>Dateien hierher ziehen oder <u>auswählen</u></span>
+        <span class="muted small">PDF-Text wird im Browser gelesen. Eingescannte Seiten ohne Text gehen nicht${imageLimits ? ", dafür Fotos hochladen" : ""}.</span>
+      </label>
+      <input type="file" id="file" multiple hidden accept=".pdf,.txt,.md${imageLimits ? "," + imageLimits.mediaTypes.join(",") : ""}">
+      <div class="files" id="files"></div>
+    </div>
+    <label for="text">…oder Text einfügen <textarea id="text" placeholder="Mitschrift, Folientext, Definitionen …"></textarea></label>
+    <div class="row">
+      <label for="cards">Karteikarten <input type="number" id="cards" min="0" max="40" value="12"></label>
+      <label for="questions">Quizfragen <input type="number" id="questions" min="0" max="20" value="8"></label>
+    </div>
+    <fieldset style="border:0;padding:0;margin:0;display:grid;gap:8px">
+      <legend style="font-weight:700;padding:0;margin-bottom:8px">Niveau</legend>
+      <div class="seg">
+        <label><input type="radio" name="level" value="einsteiger"><span>Einsteiger</span></label>
+        <label><input type="radio" name="level" value="mittel" checked><span>Fortgeschritten</span></label>
+        <label><input type="radio" name="level" value="pruefung"><span>Prüfungsniveau</span></label>
+      </div>
+    </fieldset>
+    <button class="btn red block" type="submit" id="submit">${deck ? "Weitere Inhalte erzeugen" : "Lernset erzeugen"}</button>
+    <div id="status"></div>
+  </form>`;
+}
+
+function renderFiles() {
+  const el = $("#files"); if (!el) return;
+  el.innerHTML = pending.map((f, i) => `<div class="file"><span>${esc(f.name)} <span class="muted">· ${(f.size / 1024 / 1024).toFixed(1)} MB</span></span><button type="button" data-rm="${i}" aria-label="${esc(f.name)} entfernen">×</button></div>`).join("");
+  el.querySelectorAll("[data-rm]").forEach((b) => b.addEventListener("click", () => { pending.splice(Number(b.dataset.rm), 1); renderFiles(); }));
+}
+
+async function pdfText(file) {
+  if (!window.pdfjsLib) throw new Error("PDF-Leser konnte nicht geladen werden.");
+  const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise;
+  const pages = [];
+  for (let p = 1; p <= pdf.numPages; p++) {
+    const content = await (await pdf.getPage(p)).getTextContent();
+    const text = content.items.map((it) => it.str + (it.hasEOL ? "\n" : " ")).join("").replace(/[ \t]+/g, " ").trim();
+    if (text) pages.push(`[Seite ${p}]\n${text}`);
+  }
+  return pages.join("\n\n");
+}
+
+const LEVELS = {
+  einsteiger: "Einsteiger: Grundbegriffe und Definitionen, verständlich erklärt",
+  mittel: "Fortgeschritten: Zusammenhänge, Anwendung und typische Verwechslungen",
+  pruefung: "Prüfungsniveau: anspruchsvolle Fragen wie in einer Uni-Klausur, mit Transfer und Rechnen oder Analysieren, wo es passt",
+};
+const MAX_MATERIAL_CHARS = 150000;
+
+function bindForm(deck) {
+  pending = [];
+  const input = $("#file"), drop = $("#drop");
+  const add = (list) => { for (const f of list) pending.push(f); renderFiles(); };
+  input.addEventListener("change", () => { add(input.files); input.value = ""; });
+  drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("over"); });
+  drop.addEventListener("dragleave", () => drop.classList.remove("over"));
+  drop.addEventListener("drop", (e) => { e.preventDefault(); drop.classList.remove("over"); add(e.dataTransfer.files); });
+
+  $("#gen").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const status = $("#status"), submit = $("#submit");
+    const cardCount = Math.max(0, Math.min(40, Number($("#cards").value) || 0));
+    const questionCount = Math.max(0, Math.min(20, Number($("#questions").value) || 0));
+    if (!cardCount && !questionCount) { status.innerHTML = `<p class="note error">Wähle mindestens eine Karte oder Frage.</p>`; return; }
+    if (!sample) { status.innerHTML = `<p class="note error">Claude ist in dieser Ansicht nicht erreichbar. Öffne die Seite auf claude.ai.</p>`; return; }
+    const topic = deck ? deck.name : $("#topic").value.trim();
+    const subject = deck ? deck.subject : $("#subject").value.trim();
+    const level = app.querySelector("input[name=level]:checked").value;
+    submit.disabled = true;
+    const say = (t) => (status.innerHTML = `<div class="thinking"><span class="spinner"></span>${esc(t)}</div>`);
+    try {
+      // Read material: PDFs and text files become text, images go along as images.
+      const parts = [], images = [];
+      for (const f of pending) {
+        if (f.type === "application/pdf" || /\.pdf$/i.test(f.name)) { say(`Lese ${f.name} …`); const t = await pdfText(f); if (t) parts.push(`Datei ${f.name}:\n${t}`); else throw new Error(`In „${f.name}“ wurde kein Text gefunden (eingescannt?). Lade die Seiten als Fotos hoch oder füge den Text ein.`); }
+        else if (f.type.startsWith("image/")) images.push(f);
+        else parts.push(`Datei ${f.name}:\n${await f.text()}`);
+      }
+      if ($("#text").value.trim()) parts.push(`Notizen:\n${$("#text").value.trim()}`);
+      if (images.length && !imageLimits) throw new Error(SAMPLE_ERRORS.images_unavailable);
+      if (imageLimits && images.length > imageLimits.maxCount) throw new Error(`Höchstens ${imageLimits.maxCount} Fotos pro Lernset.`);
+      let material = parts.join("\n\n---\n\n");
+      let cut = false;
+      if (material.length > MAX_MATERIAL_CHARS) { material = material.slice(0, MAX_MATERIAL_CHARS); cut = true; }
+
+      const existing = deck ? [...deck.cards.map((c) => c.front), ...deck.questions.map((q) => q.question)] : [];
+      const prompt = [
+        `Erstelle Lernmaterial zum Thema „${topic}“${subject ? ` im Fach ${subject}` : ""}.`,
+        settings.study ? `Die lernende Person studiert ${settings.study}.` : "",
+        material || images.length
+          ? "Stütze dich auf die Unterlagen unten" + (images.length ? " und die angehängten Fotos" : "") + ". Erfinde keine Inhalte, die dort nicht vorkommen oder fachlich nicht gesichert sind."
+          : "Es gibt keine Unterlagen. Nutze gesichertes Lehrbuchwissen auf Uni-Niveau.",
+        `Niveau: ${LEVELS[level]}.`,
+        `Erzeuge genau ${cardCount} Karteikarten und ${questionCount} Multiple-Choice-Fragen mit je genau 4 Antworten, von denen genau eine richtig ist.`,
+        "Karteikarten: eine Idee pro Karte, Vorderseite kurz, Rückseite präzise in höchstens 3 Sätzen. Formeln in einfacher Textschreibweise.",
+        "Quiz: plausible falsche Antworten, die richtige Antwort an wechselnden Positionen. Die Erklärung sagt kurz, warum die richtige stimmt und die anderen nicht.",
+        existing.length ? `Diese Inhalte gibt es schon. Wiederhole sie nicht, ergänze neue Aspekte:\n- ${existing.slice(0, 120).join("\n- ")}` : "",
+        "Alles auf Deutsch; Fachbegriffe dürfen englisch bleiben, wenn das im Fach üblich ist.",
+        'Antworte NUR mit einem JSON-Objekt in genau dieser Form: {"deck_name": string, "summary": string (3-6 Sätze), "flashcards": [{"front": string, "back": string}], "quiz": [{"question": string, "options": [string, string, string, string], "correct_index": 0-3, "explanation": string}]}',
+        material ? `UNTERLAGEN${cut ? " (gekürzt)" : ""}:\n\n${material}` : "",
+      ].filter(Boolean).join("\n\n");
+
+      say("Claude liest deine Unterlagen und schreibt Karten. Das dauert meist 30–90 Sekunden …");
+      const out = await sample.json(prompt, { modelTier: "default", ...(images.length ? { images } : {}) });
+
+      const cards = (Array.isArray(out?.flashcards) ? out.flashcards : [])
+        .filter((c) => c && typeof c.front === "string" && typeof c.back === "string" && c.front.trim())
+        .map((c) => newCard(c.front.trim(), c.back.trim()));
+      const questions = (Array.isArray(out?.quiz) ? out.quiz : [])
+        .filter((q) => q && typeof q.question === "string" && Array.isArray(q.options) && q.options.length >= 2 && Number.isInteger(q.correct_index) && q.correct_index >= 0 && q.correct_index < q.options.length)
+        .map((q) => ({ id: uid(), question: q.question, options: q.options.map(String), correctIndex: q.correct_index, explanation: String(q.explanation || "") }));
+      if (!cards.length && !questions.length) throw { code: "invalid_json" };
+
+      const target = deck ? { ...deck, cards: [...deck.cards], questions: [...deck.questions] } : { id: uid(), name: String(out.deck_name || topic).slice(0, 120), subject, createdAt: Date.now(), summary: "", cards: [], questions: [] };
+      target.cards.push(...cards);
+      target.questions.push(...questions);
+      if (out.summary) target.summary = deck && deck.summary ? `${deck.summary}\n\n${out.summary}` : String(out.summary);
+      saveDeck(target);
+      go("deck", { id: target.id, flash: cut ? "Die Unterlagen waren sehr lang und wurden gekürzt. Lade den Rest über „Mehr erzeugen“ nach." : "" });
+    } catch (err) {
+      status.innerHTML = `<p class="note error">${esc(err instanceof Error ? err.message : sampleError(err))}</p>`;
+      submit.disabled = false;
+    }
+  });
+}
+
+function renderNew() { app.innerHTML = `${header("Neues Lernset", "home")}${formHtml()}`; bindForm(); }
+function renderMore() {
+  const deck = getDeck(view.id);
+  app.innerHTML = `${header("Mehr erzeugen", "deck:" + deck.id)}<p class="muted">Lade weitere Vorlesungen hoch oder lass Claude „${esc(deck.name)}“ vertiefen. Bestehende Karten werden nicht doppelt erzeugt.</p>${formHtml(deck)}`;
+  bindForm(deck);
+}
+
+// ---------- Deck overview ----------
+function renderDeck() {
+  const deck = getDeck(view.id);
+  const due = dueCards(deck).length;
+  const counts = Array.from({ length: MAX_BOX }, (_, i) => deck.cards.filter((c) => c.box === i + 1).length);
+  const max = Math.max(1, ...counts);
+  app.innerHTML = `${header(deck.name, "home")}
+    ${view.flash ? `<p class="note">${esc(view.flash)}</p>` : ""}
+    <p class="muted">${esc(deck.subject || "Ohne Fach")}</p>
+    <div class="actions">
+      <button class="btn primary wide" data-go="learn:${deck.id}">Karteikarten lernen <small>${due ? `${due} fällig` : "heute alles wiederholt"}</small></button>
+      <button class="btn" data-go="quiz:${deck.id}">Quiz <small>${plural(deck.questions.length, "Frage", "Fragen")}</small></button>
+      <button class="btn" data-go="tutor:${deck.id}">Tutor fragen <small>Fragen zum Stoff</small></button>
+      <button class="btn wide" data-go="more:${deck.id}">＋ Mehr erzeugen</button>
+    </div>
+    <section style="display:grid;gap:12px">
+      <h2>Karteikasten</h2>
+      <div class="kasten">${counts.map((n, i) => `<div class="fach"><div class="slot">${n ? `<div class="fill" style="height:${Math.max(8, (n / max) * 100)}%"></div>` : ""}</div><span class="count num">${n}</span><small>Fach ${i + 1}<br>${FACH_LABEL[i]}</small></div>`).join("")}</div>
+      <p class="muted small">Gewusst rückt eine Karte ein Fach weiter, nicht gewusst schickt sie zurück in Fach 1.</p>
+    </section>
+    ${deck.summary ? `<section style="display:grid;gap:8px"><h2>Zusammenfassung</h2><p class="summary">${esc(deck.summary)}</p></section>` : ""}
+    <details><summary>Alle Karten (${deck.cards.length})</summary><ol class="cardlist">${deck.cards.map((c) => `<li><strong>${esc(c.front)}</strong><br>${esc(c.back)}</li>`).join("")}</ol></details>
+    <div id="del-area"><button class="btn danger" id="del">Lernset löschen</button></div>`;
+  $("#del").addEventListener("click", () => {
+    $("#del-area").innerHTML = `<div class="confirm"><strong>„${esc(deck.name)}“ endgültig löschen?</strong><div class="row"><button class="btn red" id="del-yes">Ja, löschen</button><button class="btn" id="del-no">Abbrechen</button></div></div>`;
+    $("#del-yes").addEventListener("click", () => { removeDeck(deck.id); go("home"); });
+    $("#del-no").addEventListener("click", () => render());
+  });
+}
+
+// ---------- Flashcards ----------
+function renderLearn() {
+  const deck = getDeck(view.id);
+  const queue = shuffle(view.all ? deck.cards : dueCards(deck)).map((c) => c.id);
+  const total = queue.length;
+  const missed = new Set();
+
+  if (!total) {
+    app.innerHTML = `${header("Karteikarten", "deck:" + deck.id)}
+      <div class="done"><div class="score">✓</div><p>Heute ist nichts mehr fällig.</p>
+      <div class="row" style="width:100%"><button class="btn" id="all">Trotzdem alle üben</button><button class="btn primary" data-go="quiz:${deck.id}">Quiz machen</button></div></div>`;
+    $("#all").addEventListener("click", () => go("learn", { id: deck.id, all: true }));
+    return;
+  }
+
+  const show = () => {
+    const current = getDeck(deck.id);
+    const card = current.cards.find((c) => c.id === queue[0]);
+    if (!card) {
+      app.innerHTML = `${header("Geschafft", "deck:" + deck.id)}
+        <div class="done"><div class="score num">${total - missed.size}/${total}</div><p>auf Anhieb gewusst</p>
+        <button class="btn primary" id="back">Zur Übersicht</button></div>`;
+      $("#back").addEventListener("click", () => go("deck", { id: deck.id }));
+      bindBack();
+      return;
+    }
+    app.innerHTML = `${header(`Karteikarten · noch ${queue.length}`, "deck:" + deck.id)}
+      <div class="flashcard" id="card" tabindex="0" role="button" aria-label="Karte umdrehen">
+        <span class="tag">Fach ${card.box}</span>
+        <div class="front">${esc(card.front)}</div>
+        <div class="back" hidden>${esc(card.back)}</div>
+        <div class="muted small" id="hint">Tippen zum Umdrehen</div>
+      </div>
+      <div class="answer" id="answer" hidden>
+        <button class="btn no" id="no">Nicht gewusst</button>
+        <button class="btn yes" id="yes">Gewusst</button>
+      </div>
+      <button class="btn ghost block" id="explain" hidden>Erklär mir das genauer</button>
+      <div id="explanation"></div>`;
+    bindBack();
+    const flip = () => { app.querySelector("#card .back").hidden = false; $("#hint").hidden = true; $("#answer").hidden = false; $("#explain").hidden = !sample; };
+    $("#card").addEventListener("click", flip);
+    $("#card").addEventListener("keydown", (e) => { if (e.key === " " || e.key === "Enter") { e.preventDefault(); flip(); } });
+    const answer = (knew) => {
+      const d = getDeck(deck.id);
+      saveDeck({ ...d, cards: d.cards.map((c) => (c.id === card.id ? reviewCard(c, knew) : c)) });
+      queue.shift();
+      if (!knew) { missed.add(card.id); queue.push(card.id); }
+      show();
+    };
+    $("#yes").addEventListener("click", () => answer(true));
+    $("#no").addEventListener("click", () => answer(false));
+    $("#explain").addEventListener("click", async () => {
+      const btn = $("#explain"), out = $("#explanation");
+      btn.disabled = true;
+      out.innerHTML = `<div class="tutor thinking"><span class="spinner"></span>Claude denkt nach …</div>`;
+      try {
+        await sample([{ role: "user", content: TUTOR_RULES(getDeck(deck.id)) + `\n\nErkläre mir diese Karteikarte genauer, mit einem anschaulichen Beispiel und einer Eselsbrücke, falls sinnvoll.\n\nVorderseite: ${card.front}\nRückseite: ${card.back}` }], {
+          onText: ({ text }) => { out.innerHTML = `<div class="tutor">${esc(text)}</div>`; },
+        });
+      } catch (err) {
+        out.innerHTML = `<p class="note error">${esc(sampleError(err))}</p>`;
+        btn.disabled = false;
+      }
+    });
+  };
+  show();
+}
+
+function bindBack() {
+  app.querySelectorAll("[data-go]:not([data-bound])").forEach((b) => {
+    b.dataset.bound = "1";
+    b.addEventListener("click", () => { const [name, id] = b.dataset.go.split(":"); go(name, id ? { id } : {}); });
+  });
+}
+
+// ---------- Quiz ----------
+function renderQuiz() {
+  const deck = getDeck(view.id);
+  const pool = view.subset ? deck.questions.filter((q) => view.subset.includes(q.id)) : deck.questions;
+  const questions = shuffle(pool).slice(0, 10);
+  const wrong = [];
+  let index = 0, score = 0;
+
+  if (!questions.length) {
+    app.innerHTML = `${header("Quiz", "deck:" + deck.id)}<div class="empty"><h2>Noch keine Quizfragen</h2><p class="muted">Lass Claude Fragen zu diesem Lernset erzeugen.</p><button class="btn red" data-go="more:${deck.id}">Fragen erzeugen</button></div>`;
+    bindBack();
+    return;
+  }
+  const show = () => {
+    const q = questions[index];
+    if (!q) {
+      app.innerHTML = `${header("Quiz-Ergebnis", "deck:" + deck.id)}
+        <div class="done"><div class="score num">${score}/${questions.length}</div><p>${score === questions.length ? "Alles richtig. Stark!" : score / questions.length >= 0.6 ? "Gut gemacht. Wiederhole die falschen gleich nochmal." : "Da geht noch was. Schau dir die Erklärungen an und probier es nochmal."}</p>
+        <div class="row" style="width:100%">
+          ${wrong.length ? `<button class="btn red" id="retry">Falsche nochmal (${wrong.length})</button>` : ""}
+          <button class="btn" id="again">Neue Runde</button>
+        </div></div>`;
+      bindBack();
+      $("#retry")?.addEventListener("click", () => go("quiz", { id: deck.id, subset: wrong.map((w) => w.id) }));
+      $("#again").addEventListener("click", () => go("quiz", { id: deck.id }));
+      return;
+    }
+    const order = shuffle(q.options.map((_, i) => i));
+    app.innerHTML = `${header(`Quiz · ${index + 1} von ${questions.length}`, "deck:" + deck.id)}
+      <p class="question">${esc(q.question)}</p>
+      <div class="options">${order.map((i, pos) => `<button class="option" data-i="${i}"><b>${"ABCD"[pos] || pos + 1}</b><span>${esc(q.options[i])}</span></button>`).join("")}</div>
+      <div id="feedback"></div>`;
+    bindBack();
+    app.querySelectorAll(".option").forEach((btn) => btn.addEventListener("click", () => {
+      const chosen = Number(btn.dataset.i), correct = chosen === q.correctIndex;
+      if (correct) score++; else wrong.push(q);
+      app.querySelectorAll(".option").forEach((b) => {
+        b.disabled = true; const i = Number(b.dataset.i);
+        if (i === q.correctIndex) b.classList.add("right"); else if (i === chosen) b.classList.add("wrong");
+      });
+      $("#feedback").innerHTML = `<div class="feedback ${correct ? "right" : "wrong"}"><strong>${correct ? "Richtig" : "Leider falsch"}</strong><p>${esc(q.explanation)}</p></div>
+        <button class="btn primary block" id="next" style="margin-top:12px">${index + 1 < questions.length ? "Nächste Frage" : "Ergebnis ansehen"}</button>`;
+      $("#next").addEventListener("click", () => { index++; show(); });
+      $("#next").focus();
+    }));
+  };
+  show();
+}
+
+// ---------- Tutor chat ----------
+function renderTutor() {
+  const deck = getDeck(view.id);
+  const turns = [];
+  let ctl = null;
+  app.innerHTML = `${header("Tutor", "deck:" + deck.id)}
+    <div class="chat" id="log"><div class="msg bot">Frag mich alles zu „${esc(deck.name)}“, zum Beispiel: „Erklär mir das nochmal einfacher“ oder „Gib mir eine Übungsaufgabe mit Lösung“.</div></div>
+    ${sample ? `<form class="chat-form" id="ask"><textarea id="q" placeholder="Deine Frage …" required></textarea><button class="btn primary" type="submit" id="send">Senden</button></form>`
+      : `<p class="note">Claude ist in dieser Ansicht nicht erreichbar. Öffne die Seite auf claude.ai.</p>`}`;
+  if (!sample) return;
+  const log = $("#log"), input = $("#q"), send = $("#send");
+  input.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("#ask").requestSubmit(); } });
+  $("#ask").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    if (ctl) { ctl.abort(); return; } // the send button doubles as Stop
+    const q = input.value.trim(); if (!q) return;
+    input.value = "";
+    log.insertAdjacentHTML("beforeend", `<div class="msg me">${esc(q)}</div>`);
+    const bubble = document.createElement("div");
+    bubble.className = "msg bot thinking"; bubble.innerHTML = `<span class="spinner"></span>Claude denkt nach …`;
+    log.appendChild(bubble); bubble.scrollIntoView({ block: "end" });
+    turns.push({ role: "user", content: q });
+    ctl = new AbortController(); send.textContent = "Stopp";
+    try {
+      const recent = turns.slice(-12);
+      const { text } = await sample([{ role: "user", content: TUTOR_RULES(getDeck(deck.id)) }, ...recent], {
+        cache: false, signal: ctl.signal,
+        onText: ({ text }) => { bubble.className = "msg bot"; bubble.textContent = text; },
+      });
+      turns.push({ role: "assistant", content: text });
+    } catch (err) {
+      if (err?.text) { bubble.className = "msg bot"; bubble.textContent = err.text; turns.push({ role: "assistant", content: err.text }); }
+      else { bubble.className = "note error"; bubble.textContent = sampleError(err); turns.pop(); }
+    }
+    ctl = null; send.textContent = "Senden"; input.focus();
+  });
+}
+
+// ---------- Settings ----------
+function renderSettings() {
+  app.innerHTML = `${header("Einstellungen", "home")}
+    <form id="settings">
+      <label for="study">Was studierst du? <span class="muted">(hilft Claude, passend zu erklären)</span>
+        <input type="text" id="study" value="${esc(settings.study)}" placeholder="z. B. BWL, 3. Semester"></label>
+      <button class="btn primary" type="submit">Speichern</button>
+    </form>
+    <section class="note small" style="display:grid;gap:6px">
+      <strong>Wo liegen meine Daten?</strong>
+      <p>${store ? "Deine Lernsets sind privat in deinem Claude-Konto gespeichert und auf all deinen Geräten verfügbar." : "Deine Lernsets liegen nur in diesem Browser."}</p>
+      <strong>Was kostet das?</strong>
+      <p>Neue Inhalte, Erklärungen und Tutor-Antworten laufen über dein Claude-Abo und zählen zu deinem normalen Nutzungskontingent. Lernen und Quiz brauchen kein Claude.</p>
+    </section>`;
+  bindBack();
+  $("#settings").addEventListener("submit", (e) => { e.preventDefault(); settings.study = $("#study").value.trim(); saveSettings(); go("home"); });
+}
+
+// ---------- Start ----------
+render();
+(async () => {
+  const claude = window.claude;
+  const [s, db, user] = await Promise.all([
+    claude?.use?.("sample") ?? null,
+    claude?.use?.("db") ?? null,
+    claude?.use?.("user") ?? null,
+  ].map((p) => Promise.resolve(p).catch(() => null)));
+  sample = s;
+  if (sample) imageLimits = (await sample.limits().catch(() => null))?.images || null;
+  const me = user ? await user.id().catch(() => null) : null;
+  if (db && me) {
+    const base = `data/users/${me}`;
+    store = { col: db.collection(`${base}/lernbuddy/decks`), settingsDoc: db.doc(`${base}/lernbuddy`) };
+    store.settingsDoc.get().then((snap) => { const v = snap.data(); if (v) { settings = { ...settings, ...v }; if (view.name === "settings") render(); } }).catch(() => {});
+    let first = true;
+    store.col.onSnapshot((snap) => {
+      decks = snap.docs.map((d) => d.data()).filter(Boolean);
+      sortDecks();
+      // Avoid yanking the learner out of a running session: only re-render list-style views.
+      if (first || ["home", "deck"].includes(view.name)) { ready = true; first = false; render(); }
+    }, () => { ready = true; localLoad(); render(); });
+  } else {
+    localLoad(); ready = true; render();
+  }
+})();
+</script>
