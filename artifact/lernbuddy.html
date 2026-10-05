@@ -299,7 +299,7 @@ function header(title, back) {
 }
 
 function render() {
-  const fn = { home: renderHome, new: renderNew, deck: renderDeck, learn: renderLearn, quiz: renderQuiz, tutor: renderTutor, more: renderMore, settings: renderSettings }[view.name];
+  const fn = { home: renderHome, new: renderNew, folder: renderFolder, deck: renderDeck, learn: renderLearn, quiz: renderQuiz, tutor: renderTutor, more: renderMore, settings: renderSettings }[view.name];
   if (view.id && !getDeck(view.id)) { view = { name: "home" }; }
   (fn || renderHome)();
   bindBack();
@@ -323,11 +323,13 @@ function renderHome() {
       <h1>Aus deinen Unterlagen werden Karteikarten.</h1>
       <p class="muted">Lade Skript, Folien oder Notizen hoch. Claude erstellt Karteikarten, ein Quiz und eine Zusammenfassung, und du lernst mit dem Karteikasten-Prinzip.</p>
     </section>
-    <div class="row"><button class="btn red" data-go="new">＋ Neues Lernset</button><button class="btn ghost" data-go="settings">Einstellungen</button></div>
+    <div class="row"><button class="btn red" data-go="new">＋ Neues Lernset</button><button class="btn" id="open-folder">Uni-Ordner öffnen</button><button class="btn ghost" data-go="settings">Einstellungen</button></div>
+    <input type="file" id="folder-input" webkitdirectory multiple hidden>
     ${!ready ? `<div class="thinking"><span class="spinner"></span>Deine Lernsets werden geladen …</div>` :
       decks.length ? `<h2>Deine Lernsets</h2><div class="decks">${list}</div>` :
       `<div class="empty"><h2>Noch keine Lernsets</h2><p class="muted">Dein erstes Lernset erscheint hier. Starte mit einem Vorlesungs-PDF oder schau dir zuerst ein Beispiel an.</p><button class="btn" id="example">Beispiel-Lernset ansehen</button></div>`}
     ${sample === null && ready ? `<p class="note small">Claude ist in dieser Ansicht nicht erreichbar. Öffne die Seite auf claude.ai, um neue Inhalte zu erzeugen. Lernen geht trotzdem.</p>` : ""}`;
+  bindFolderPicker();
   $("#example")?.addEventListener("click", () => { const d = exampleDeck(); saveDeck(d); go("deck", { id: d.id }); });
 }
 
@@ -489,7 +491,60 @@ function bindForm(deck) {
   });
 }
 
-function renderNew() { app.innerHTML = `${header("Neues Lernset", "home")}${formHtml()}`; bindForm(); }
+function renderNew() {
+  const pre = view.prefill;
+  app.innerHTML = `${header("Neues Lernset", pre ? "folder" : "home")}${formHtml()}`;
+  bindForm();
+  if (pre) { $("#topic").value = pre.topic; $("#subject").value = pre.subject || ""; pending = [...pre.files]; renderFiles(); }
+}
+
+// ---------- Uni folder import ----------
+// The browser lets the viewer pick a whole folder once; files are grouped by the folder they sit in.
+let folder = null; // { root, groups: [{ path, files }] }
+const STUDY_FILE = /\.(pdf|txt|md|png|jpe?g|webp)$/i;
+
+function bindFolderPicker() {
+  const input = $("#folder-input");
+  $("#open-folder")?.addEventListener("click", () => input.click());
+  input?.addEventListener("change", () => {
+    const files = [...input.files].filter((f) => STUDY_FILE.test(f.name) && !f.name.startsWith("~$"));
+    if (!input.files.length) return;
+    const root = (input.files[0].webkitRelativePath || "").split("/")[0] || "Ordner";
+    const map = new Map();
+    for (const f of files) {
+      const parts = (f.webkitRelativePath || f.name).split("/");
+      const dir = parts.slice(1, -1).join(" › ") || root;
+      if (!map.has(dir)) map.set(dir, []);
+      map.get(dir).push(f);
+    }
+    folder = { root, groups: [...map].map(([path, fs]) => ({ path, files: fs.sort((a, b) => a.name.localeCompare(b.name, "de", { numeric: true })) })).sort((a, b) => a.path.localeCompare(b.path, "de", { numeric: true })) };
+    input.value = "";
+    go("folder");
+  });
+}
+
+function renderFolder() {
+  if (!folder) return go("home");
+  const mb = (n) => (n / 1024 / 1024).toFixed(1);
+  app.innerHTML = `${header(folder.root, "home")}
+    <p class="muted">${folder.groups.length ? `${plural(folder.groups.length, "Ordner", "Ordner")} mit Lernmaterial gefunden. Wähle die Dateien für ein Lernset, am besten eine Vorlesung oder ein Kapitel auf einmal.` : "In diesem Ordner wurden keine PDFs, Textdateien oder Bilder gefunden."}</p>
+    <div class="decks">${folder.groups.map((g, gi) => {
+      const size = g.files.reduce((n, f) => n + f.size, 0);
+      return `<details class="group" ${folder.groups.length === 1 ? "open" : ""}>
+        <summary><strong>${esc(g.path)}</strong> <span class="muted small">· ${plural(g.files.length, "Datei", "Dateien")} · ${mb(size)} MB</span></summary>
+        <div class="files" style="margin-top:10px">${g.files.map((f, fi) => `<label class="file" style="font-weight:400;cursor:pointer"><span>${esc(f.name)}</span><input type="checkbox" data-g="${gi}" data-f="${fi}" ${g.files.length <= 6 ? "checked" : ""}></label>`).join("")}</div>
+        <button class="btn red block" data-make="${gi}" style="margin-top:10px">Lernset aus Auswahl erstellen</button>
+      </details>`; }).join("")}</div>
+    <p class="muted small">Sehr viele oder sehr lange Dateien auf einmal werden gekürzt. Lieber mehrere kleine Lernsets oder später „Mehr erzeugen“ nutzen.</p>`;
+  app.querySelectorAll("[data-make]").forEach((b) => b.addEventListener("click", () => {
+    const gi = Number(b.dataset.make), g = folder.groups[gi];
+    const files = [...app.querySelectorAll(`input[data-g="${gi}"]:checked`)].map((c) => g.files[Number(c.dataset.f)]);
+    if (!files.length) { showToast("Wähle mindestens eine Datei aus."); return; }
+    const segs = g.path.split(" › ");
+    const topic = files.length === 1 ? files[0].name.replace(/\.[^.]+$/, "") : segs[segs.length - 1];
+    go("new", { prefill: { topic, subject: segs[segs.length - 1] === topic ? (segs[segs.length - 2] || "") : segs[segs.length - 1], files } });
+  }));
+}
 function renderMore() {
   const deck = getDeck(view.id);
   app.innerHTML = `${header("Mehr erzeugen", "deck:" + deck.id)}<p class="muted">Lade weitere Vorlesungen hoch oder lass Claude „${esc(deck.name)}“ vertiefen. Bestehende Karten werden nicht doppelt erzeugt.</p>${formHtml(deck)}`;
