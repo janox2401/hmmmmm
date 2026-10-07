@@ -1,0 +1,5 @@
+{
+  "codeRoot": "%USERPROFILE%\\code",
+  "claudeHome": "~/.claude",
+  "port": 4711
+}
